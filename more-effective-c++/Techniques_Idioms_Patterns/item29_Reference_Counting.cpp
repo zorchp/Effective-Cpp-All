@@ -1,124 +1,155 @@
+#include <cstdio>
 #include <cstring>
 #include <cstdlib>
-#include <iostream>
-#include <sys/signal.h>
 
-using namespace std;
 
+namespace Base_version {
 class String {
 public:
-    String(const char *value = "") : data1((char *)value) {}
+    String(const char *value = "") {
+        RealData = new char[strlen(value) + 1];
+        strcpy(RealData, value);
+    }
+    ~String() {
+        printf("call dtor\n");
+        delete[] RealData;
+    }
     String &operator=(const String &rhs) {
         if (this == &rhs) return *this;
-        delete[] data1;
-        data1 = new char[strlen(rhs.data1) + 1];
-        strcpy(data1, rhs.data1);
+        delete[] RealData;
+        // 每次赋值都用新的地址
+        RealData = new char[strlen(rhs.RealData) + 1];
+        strcpy(RealData, rhs.RealData);
         return *this;
+    }
+    void printf_data() { //
+        printf("%s\n", RealData);
+    }
+    void printf_data_address() { //
+        printf("%p\n", RealData);
     }
 
 private:
-    char *data1;
+    char *RealData;
 };
+} // namespace Base_version
 
 void t1() {
+    using namespace Base_version;
     String a, b, c, d, e;
     a = b = c = d = e = "Hello";
+    // 此时这几部分都是不同的地址
+    a.printf_data(); //
+    b.printf_data(); //
+    c.printf_data();
+    a.printf_data_address(); //
+    b.printf_data_address(); //
+    c.printf_data_address();
+    // Hello
+    // Hello
+    // Hello
+    // 0x106e005b0
+    // 0x106e005d0
+    // 0x106e005f0
 }
 
 
-class String_RC {
+namespace Base_ref_count_String {
+class String {
 public:
-    String_RC(const char *initValue = "");
-    /* String_RC(const String_RC &rhs) : value(rhs.value) {} */
-    String_RC(const String_RC &rhs);
-    String_RC &operator=(const String_RC &rhs);
+    String(const char *initValue = "") : value(new StringValue(initValue)) {}
 
-    const char &operator[](int index) const;
-    char &operator[](int index);
+    String(const String &rhs) {
+        if (rhs.value->shareable) {
+            value = rhs.value;
+            ++value->refCount;
+        } else { // 不可共享, 创建新的副本供写时复制使用
+            value = new StringValue(rhs.value->RealData);
+        }
+    }
+    String &operator=(const String &rhs) {
+        if (value == rhs.value) return *this;
+        if (--value->refCount == 0) delete value;
 
-    ~String_RC() {
+        value = rhs.value;
+        ++value->refCount;
+        return *this;
+    }
+
+    const char &operator[](int index) const { return value->RealData[index]; }
+    char &operator[](int index) {
+        if (value->refCount > 1) {
+            --value->refCount;
+            value = new StringValue(value->RealData);
+        }
+        // add this: 设置不可共享
+        // 此时如果要修改, 那么就要创建新的副本
+        value->shareable = false;
+        return value->RealData[index];
+    }
+
+    ~String() {
         if (--value->refCount == 0) delete value;
     }
+    void printf_data_address() { printf("%p\n", value); }
 
 private:
     // 引用计数器实现
     struct StringValue {
         int refCount;
         bool shareable; // 标记共享状态
-        char *data1;
-        StringValue(const char *initValue);
-        ~StringValue() { delete[] data1; }
+        char *RealData; // 实际数据存放
+        StringValue(const char *initValue) : refCount(1), shareable(true) {
+            RealData = new char[strlen(initValue) + 1];
+            strcpy(RealData, initValue);
+        }
+
+        ~StringValue() { delete[] RealData; }
     };
 
     StringValue *value;
 };
-
-String_RC::String_RC(const String_RC &rhs) {
-    if (rhs.value->shareable) {
-        value = rhs.value;
-        ++value->refCount;
-    } else { // 不可共享, 创建新的副本供写时复制使用
-        value = new StringValue(rhs.value->data1);
-    }
-}
-
-String_RC::StringValue::StringValue(const char *initValue)
-    : refCount(1), shareable(true) {
-    data1 = new char[strlen(initValue) + 1];
-    strcpy(data1, initValue);
-}
-String_RC::String_RC(const char *initValue)
-    : value(new StringValue(initValue)) {}
-
-String_RC &String_RC::operator=(const String_RC &rhs) {
-    if (value == rhs.value) return *this;
-    if (--value->refCount == 0) delete value;
-
-    value = rhs.value;
-    ++value->refCount;
-    return *this;
-}
-
-const char &String_RC::operator[](int index) const {
-    return value->data1[index];
-}
-char &String_RC::operator[](int index) {
-    if (value->refCount > 1) {
-        --value->refCount;
-        value = new StringValue(value->data1);
-    }
-    // add this: 设置不可共享
-    // 此时如果要修改, 那么就要创建新的副本
-    value->shareable = false;
-    return value->data1[index];
-}
-
+} // namespace Base_ref_count_String
 
 void t2() {
-    //
+    using namespace Base_ref_count_String;
     // 两个对象, 占用两份内存
-    String_RC s1("hello");
-    String_RC s2("hello");
+    String s1("hello");
+    String s2("hello");
+    s1.printf_data_address();
+    s2.printf_data_address();
+    // 0x16f002ab8
+    // 0x16f002ab0
+
     // 占用一份内存
-    String_RC s3("world");
-    String_RC s4 = s3;
+    String s3("world");
+    s3.printf_data_address();
+    String s4 = s3;
+    s4.printf_data_address();
+    // 0x105700670
+    // 0x105700670
 }
 
 void t3() {
-    String_RC s1 = "hello";
+    using namespace Base_ref_count_String;
+    String s1 = "hello";
     char *p = &s1[1];
-    String_RC s2 = s1;
+    String s2 = s1;
     // 需要设置共享变量
-    cout << *p << endl;                    // e
-    cout << s1[1] << " " << s2[1] << endl; // e e
+    printf("%c\n", *p);
+    printf("s1[1]=%c, s2[1]=%c\n", s1[1], s2[1]);
     *p = 'f';
-    cout << s1[1] << " " << s2[1] << endl; // f e
+    printf("s1[1]=%c, s2[1]=%c\n", s1[1], s2[1]);
+    // e
+    // 由于设置了不可共享, 这里分成了两份内容
+    // s1[1]=e, s2[1]=e
+    // s1[1]=f, s2[1]=e
 }
 
-// 引用计数基类
+// 抽象出来的 引用计数基类
 class RCObject {
 public:
-    RCObject() : refCount(0), shareable(true) {}
+    RCObject() : refCount(0), shareable(true) {} // 注意这里初始化成 0 了
     RCObject(const RCObject &) : refCount(0), shareable(true) {}
     RCObject &operator=(const RCObject &) { return *this; }
     virtual ~RCObject() = 0;
@@ -136,33 +167,28 @@ private:
     bool shareable;
 };
 
-RCObject::~RCObject() {}
+RCObject::~RCObject() { printf("~RCObject()\n"); }
 
+
+namespace Better_RC_String { // 类的实现者层面, 直接拿来用即可
 // 新的嵌套类实现引用计数字符串类型
-class String1 {
-private:
-    struct StringValue : public RCObject {
-        char *data;
-        StringValue(const char *initValue) {
-            data = new char[strlen(initValue) + 1];
-            strcpy(data, initValue);
-        }
-        ~StringValue() { delete[] data; }
-    };
-};
-
-
-// 自动完成引用计数, T必须继承自RCObject
+// 自动完成引用计数, T必须继承自RCObject, 以使用引用计数的功能
 template <class T>
-class RCPtr {
+class RCPtr { // 智能指针实现
 public:
-    RCPtr(T *realPtr = 0) : pointee(realPtr) { init(); }
-    RCPtr(const RCPtr &rhs) : pointee(rhs.pointee) { init(); }
+    RCPtr(T *realPtr = nullptr) : pointee(realPtr) { init(); }
+    RCPtr(const RCPtr &rhs) : pointee(rhs.pointee) {
+        // 当 String 发生拷贝初始化, 调用智能指针的拷贝构造函数
+        init();
+    }
     ~RCPtr() {
-        if (pointee) pointee->removeReference();
+        if (pointee) {
+            pointee->removeReference();
+            printf("~RCPtr(), removeReference\n");
+        }
     }
 
-    RCPtr &operator=(const RCPtr &rhs) {
+    RCPtr &operator=(const RCPtr &rhs) { // COW call this
         if (pointee != rhs.pointee) {
             if (pointee) pointee->removeReference();
             pointee = rhs.pointee;
@@ -177,25 +203,36 @@ public:
 private:
     T *pointee;
     void init() {
-        if (pointee == 0) return;
-        if (pointee->isShareable() == false) pointee = new T(*pointee);
-        pointee->addReference();
+        if (pointee == nullptr) return;
+        if (pointee->isShareable() == false) // 不可共享, 创建一份新的
+            pointee = new T(*pointee);
+        pointee->addReference(); // 默认值是 0, 这里初始化就要先加上一
     }
 };
 
-class String2 {
+// 完整的实现, 用新封装好的 RCPtr 和 RCObject 实现
+class String {
 public:
-    String2(const char *initValue = "") : value(new StringValue(initValue)) {}
+    String(const char *initValue = "") : value(new StringValue(initValue)) {}
 
-    const char &operator[](int index) const { return value->data[index]; }
-    char &operator[](int index) {
-        if (value->isShared()) value = new StringValue(value->data);
+    const char &operator[](int index) const { // 直接取出值
+        return value->data[index];
+    }
+
+    char &operator[](int index) { // COW, 如果可共享, 拷贝新值
+        if (value->isShared()) {
+            value = new StringValue(value->data);
+        }
         value->markUnshareable();
         return value->data[index];
     }
 
+    // for test
+    void printf_data() { printf("%s\n", value->data); }
+    void printf_data_address() { printf("%p\n", value->data); }
+
 private:
-    struct StringValue : public RCObject {
+    struct StringValue : public RCObject { // T 继承自 RCObject
         char *data;
         void init(const char *initValue) {
             data = new char[strlen(initValue) + 1];
@@ -204,13 +241,44 @@ private:
 
         StringValue(const StringValue &rhs) { init(rhs.data); }
         StringValue(const char *initValue) {
-            init(initValue); // 深拷贝
+            init(initValue); // deep copy
         }
-        ~StringValue() { delete[] data; }
+        ~StringValue() {
+            printf("~StringValue()\n");
+            delete[] data;
+        }
     };
-    RCPtr<StringValue> value;
+    RCPtr<StringValue> value; // 接管数据
 };
+} // namespace Better_RC_String
 
+void t4() {
+    //
+    using namespace Better_RC_String;
+    String s = "abc";
+    String s1 = s; // call copy-ctor
+    s1[0] = 'b'; // COW, 需要生成一份对象, 然后智能指针删除原始对象
+    s.printf_data_address();
+    s1.printf_data_address();
+    s.printf_data();
+    s1.printf_data();
+    // 之所以会产生这条, 是因为s1[0] = 'b';这条语句事实上调用了 RCPtr
+    // 的拷贝赋值运算符(由于 COW 技术), 这就使得原对象出现了析构
+    // ~RCPtr()
+    // 0x1058006f0
+    // 0x1058006d0
+    // abc
+    // bbc
+    // ~StringValue()
+    // ~RCObject()
+    // ~RCPtr()
+    // ~StringValue()
+    // ~RCObject()
+    // ~RCPtr()
+}
+
+
+namespace Best_RC_String {
 // 为库函数内的类实现引用计数(不可改动的类)Indirect
 template <class T>
 class RCIPtr {
@@ -234,13 +302,13 @@ public:
 
     const T *operator->() const { return counter->pointee; }
     T *operator->() {
-        makeCopy();
+        makeCopy(); // COW
         return counter->pointee;
     }
 
     const T &operator*() const { return *(counter->pointee); }
     T &operator*() {
-        makeCopy();
+        makeCopy(); // COW
         return *(counter->pointee);
     }
 
@@ -250,30 +318,25 @@ private:
         T *pointee;
     };
     CountHolder *counter;
-    void init();
-    void makeCopy();
-};
-
-template <class T>
-void RCIPtr<T>::init() {
-    if (counter->isShareable() == false) {
-        T *oldValue = counter->pointee;
-        counter = new CountHolder;
-        counter->pointee = new T(*oldValue);
-    }
-    counter->addReference();
-}
-
-template <class T>
-void RCIPtr<T>::makeCopy() {
-    if (counter->isShared()) {
-        T *oldValue = counter->pointee;
-        counter->removeReference();
-        counter = new CountHolder;
-        counter->pointee = new T(*oldValue);
+    void init() {
+        if (counter->isShareable() == false) {
+            T *oldValue = counter->pointee;
+            counter = new CountHolder;
+            counter->pointee = new T(*oldValue);
+        }
         counter->addReference();
     }
-}
+    void makeCopy() {
+        if (counter->isShared()) {
+            T *oldValue = counter->pointee;
+            counter->removeReference();
+            counter = new CountHolder;
+            counter->pointee = new T(*oldValue);
+            counter->addReference();
+        }
+    }
+};
+
 
 // 目标对象, 不可改动
 class Widget {
@@ -288,7 +351,7 @@ public:
 };
 
 // 中间层
-class RCWidget {
+class RCWidget { // 充当了String 的角色, 内部以智能指针控制内存行为
 public:
     RCWidget() = default;
     RCWidget(int size) : value(new Widget(size)) {}
@@ -299,18 +362,21 @@ private:
     RCIPtr<Widget> value;
 };
 
+} // namespace Best_RC_String
 // 使用: 改善效率的最佳时机
 //  1. 相对多数的对象共享相对少量的实值
 //  2. 对象实值的产生或销毁成本很高, 或者使用内存较大
-void t4() {
+void t5() {
+    using namespace Best_RC_String;
     RCWidget w1, w2;
     w1 = w2;
 }
 
 int main(int argc, char *argv[]) {
-    /* t1(); */
-    /* t2(); */
-    /* t3(); */
-    t4();
+    // t1();
+    // t2();
+    // t3();
+    // t4();
+    t5();
     return 0;
 }

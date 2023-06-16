@@ -32,16 +32,16 @@ void t1() {
 }
 
 // 但是这会阻止继承和组合(内含)
-class NonNegativeUPNumber : public UPNumber {};
+class NonNegativeUPNumber : public UPNumber {}; // 继承
 
 class Asset {
 private:
-    UPNumber val;
+    UPNumber val; // 组合
 };
 
 void t2() {
-    /* NonNegativeUPNumber n1; */
-    /* Asset a1; */
+    NonNegativeUPNumber n1;
+    // Asset a1;
 }
 
 // 把基类的dtor访问类型变成protected
@@ -186,7 +186,7 @@ private:
 void t6() {
     NoHeap_UPNumber n1; // ok
     static NoHeap_UPNumber n2;
-    /* auto i = new NoHeap_UPNumber(); // error */
+    // auto i = new NoHeap_UPNumber(); // error
 }
 
 // 但是基类继承会有一些问题
@@ -195,7 +195,7 @@ class NonNegativeUPNumber2 : public NoHeap_UPNumber {};
 void t7() {
     NonNegativeUPNumber2 n1;
     static NonNegativeUPNumber2 n2;
-    /* auto i = new NonNegativeUPNumber2(); // error */
+    // auto i = new NonNegativeUPNumber2(); // error
 }
 
 class Asset3 {
@@ -214,12 +214,12 @@ void t8() {
 }
 
 int main(int argc, char* argv[]) {
-    /* t1(); */
-    /* t2(); */
-    /* t3(); */
-    /* t4(); */
-    /* allocateSomeObjs(); */
-    /* t5(); */
+    // t1();
+    // t2();
+    // t3();
+    // t4();
+    // allocateSomeObjs();
+    // t5();
     t8();
     return 0;
 }
