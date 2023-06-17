@@ -1,7 +1,6 @@
 #include <cstdio>
-#include <cstring>
 #include <cstdlib>
-
+#include <cstring>
 
 namespace Base_version {
 class String {
@@ -15,7 +14,8 @@ public:
         delete[] RealData;
     }
     String &operator=(const String &rhs) {
-        if (this == &rhs) return *this;
+        if (this == &rhs)
+            return *this;
         delete[] RealData;
         // 每次赋值都用新的地址
         RealData = new char[strlen(rhs.RealData) + 1];
@@ -53,11 +53,11 @@ void t1() {
     // 0x106e005f0
 }
 
-
 namespace Base_ref_count_String {
 class String {
 public:
-    String(const char *initValue = "") : value(new StringValue(initValue)) {}
+    String(const char *initValue = "") : value(new StringValue(initValue)) {
+    }
 
     String(const String &rhs) {
         if (rhs.value->shareable) {
@@ -68,15 +68,19 @@ public:
         }
     }
     String &operator=(const String &rhs) {
-        if (value == rhs.value) return *this;
-        if (--value->refCount == 0) delete value;
+        if (value == rhs.value)
+            return *this;
+        if (--value->refCount == 0)
+            delete value;
 
         value = rhs.value;
         ++value->refCount;
         return *this;
     }
 
-    const char &operator[](int index) const { return value->RealData[index]; }
+    const char &operator[](int index) const {
+        return value->RealData[index];
+    }
     char &operator[](int index) {
         if (value->refCount > 1) {
             --value->refCount;
@@ -89,9 +93,12 @@ public:
     }
 
     ~String() {
-        if (--value->refCount == 0) delete value;
+        if (--value->refCount == 0)
+            delete value;
     }
-    void printf_data_address() { printf("%p\n", value); }
+    void printf_data_address() {
+        printf("%p\n", value);
+    }
 
 private:
     // 引用计数器实现
@@ -104,7 +111,9 @@ private:
             strcpy(RealData, initValue);
         }
 
-        ~StringValue() { delete[] RealData; }
+        ~StringValue() {
+            delete[] RealData;
+        }
     };
 
     StringValue *value;
@@ -146,29 +155,43 @@ void t3() {
     // s1[1]=f, s2[1]=e
 }
 
-// 抽象出来的 引用计数基类
+// 抽象出来的 引用计数基类, 用于之后封装
 class RCObject {
 public:
-    RCObject() : refCount(0), shareable(true) {} // 注意这里初始化成 0 了
-    RCObject(const RCObject &) : refCount(0), shareable(true) {}
-    RCObject &operator=(const RCObject &) { return *this; }
+    RCObject() : refCount(0), shareable(true) {
+    } // 注意这里初始化成 0 了
+    RCObject(const RCObject &) : refCount(0), shareable(true) {
+    }
+    RCObject &operator=(const RCObject &) {
+        return *this;
+    }
     virtual ~RCObject() = 0;
 
-    void addReference() { ++refCount; }
-    void removeReference() {
-        if (--refCount == 0) delete this;
+    void addReference() {
+        ++refCount;
     }
-    void markUnshareable() { shareable = false; }
-    bool isShareable() const { return shareable; }
-    bool isShared() const { return refCount > 1; }
+    void removeReference() {
+        if (--refCount == 0)
+            delete this;
+    }
+    void markUnshareable() {
+        shareable = false;
+    }
+    bool isShareable() const {
+        return shareable;
+    }
+    bool isShared() const {
+        return refCount > 1;
+    }
 
 private:
     int refCount;
     bool shareable;
 };
 
-RCObject::~RCObject() { printf("~RCObject()\n"); }
-
+RCObject::~RCObject() {
+    printf("~RCObject()\n");
+}
 
 namespace Better_RC_String { // 类的实现者层面, 直接拿来用即可
 // 新的嵌套类实现引用计数字符串类型
@@ -176,7 +199,9 @@ namespace Better_RC_String { // 类的实现者层面, 直接拿来用即可
 template <class T>
 class RCPtr { // 智能指针实现
 public:
-    RCPtr(T *realPtr = nullptr) : pointee(realPtr) { init(); }
+    RCPtr(T *realPtr = nullptr) : pointee(realPtr) {
+        init();
+    }
     RCPtr(const RCPtr &rhs) : pointee(rhs.pointee) {
         // 当 String 发生拷贝初始化, 调用智能指针的拷贝构造函数
         init();
@@ -190,20 +215,26 @@ public:
 
     RCPtr &operator=(const RCPtr &rhs) { // COW call this
         if (pointee != rhs.pointee) {
-            if (pointee) pointee->removeReference();
+            if (pointee)
+                pointee->removeReference();
             pointee = rhs.pointee;
             init();
         }
         return *this;
     }
 
-    T *operator->() const { return pointee; }
-    T &operator*() const { return *pointee; }
+    T *operator->() const {
+        return pointee;
+    }
+    T &operator*() const {
+        return *pointee;
+    }
 
 private:
     T *pointee;
     void init() {
-        if (pointee == nullptr) return;
+        if (pointee == nullptr)
+            return;
         if (pointee->isShareable() == false) // 不可共享, 创建一份新的
             pointee = new T(*pointee);
         pointee->addReference(); // 默认值是 0, 这里初始化就要先加上一
@@ -213,7 +244,8 @@ private:
 // 完整的实现, 用新封装好的 RCPtr 和 RCObject 实现
 class String {
 public:
-    String(const char *initValue = "") : value(new StringValue(initValue)) {}
+    String(const char *initValue = "") : value(new StringValue(initValue)) {
+    }
 
     const char &operator[](int index) const { // 直接取出值
         return value->data[index];
@@ -228,8 +260,12 @@ public:
     }
 
     // for test
-    void printf_data() { printf("%s\n", value->data); }
-    void printf_data_address() { printf("%p\n", value->data); }
+    void printf_data() {
+        printf("%s\n", value->data);
+    }
+    void printf_data_address() {
+        printf("%p\n", value->data);
+    }
 
 private:
     struct StringValue : public RCObject { // T 继承自 RCObject
@@ -239,7 +275,9 @@ private:
             strcpy(data, initValue);
         }
 
-        StringValue(const StringValue &rhs) { init(rhs.data); }
+        StringValue(const StringValue &rhs) {
+            init(rhs.data);
+        }
         StringValue(const char *initValue) {
             init(initValue); // deep copy
         }
@@ -277,20 +315,23 @@ void t4() {
     // ~RCPtr()
 }
 
-
 namespace Best_RC_String {
 // 为库函数内的类实现引用计数(不可改动的类)Indirect
 template <class T>
 class RCIPtr {
 public:
-    RCIPtr(T *realPtr = 0) : counter(new CountHolder) {
+    RCIPtr(T *realPtr = nullptr) : counter(new CountHolder) {
         counter->pointee = realPtr;
         init();
     }
 
-    RCIPtr(const RCIPtr &rhs) : counter(rhs.counter) { init(); }
+    RCIPtr(const RCIPtr &rhs) : counter(rhs.counter) {
+        init();
+    }
 
-    ~RCIPtr() { counter->removeReference(); }
+    ~RCIPtr() {
+        counter->removeReference();
+    }
     RCIPtr &operator=(const RCIPtr &rhs) {
         if (counter != rhs.counter) {
             counter->removeReference();
@@ -300,13 +341,17 @@ public:
         return *this;
     }
 
-    const T *operator->() const { return counter->pointee; }
+    const T *operator->() const {
+        return counter->pointee;
+    }
     T *operator->() {
         makeCopy(); // COW
         return counter->pointee;
     }
 
-    const T &operator*() const { return *(counter->pointee); }
+    const T &operator*() const {
+        return *(counter->pointee);
+    }
     T &operator*() {
         makeCopy(); // COW
         return *(counter->pointee);
@@ -314,7 +359,9 @@ public:
 
 private:
     struct CountHolder : public RCObject {
-        ~CountHolder() { delete pointee; }
+        ~CountHolder() {
+            delete pointee;
+        }
         T *pointee;
     };
     CountHolder *counter;
@@ -337,14 +384,16 @@ private:
     }
 };
 
-
 // 目标对象, 不可改动
 class Widget {
 public:
     Widget() = default;
-    Widget(int size) {}
-    Widget(const Widget &) {}
-    ~Widget() {}
+    Widget(int size) {
+    }
+    Widget(const Widget &) {
+    }
+    ~Widget() {
+    }
     Widget &operator=(const Widget &);
     void doThis();
     int showThat() const;
@@ -354,12 +403,17 @@ public:
 class RCWidget { // 充当了String 的角色, 内部以智能指针控制内存行为
 public:
     RCWidget() = default;
-    RCWidget(int size) : value(new Widget(size)) {}
-    void doThis() { value->doThis(); }
-    int showThat() const { return value->showThat(); }
+    RCWidget(int size) : value(new Widget(size)) {
+    }
+    void doThis() {
+        value->doThis();
+    }
+    int showThat() const {
+        return value->showThat();
+    }
 
 private:
-    RCIPtr<Widget> value;
+    RCIPtr<Widget> value; // 实际控制
 };
 
 } // namespace Best_RC_String
