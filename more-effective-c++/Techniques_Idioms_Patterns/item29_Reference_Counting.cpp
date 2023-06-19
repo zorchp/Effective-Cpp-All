@@ -70,11 +70,11 @@ public:
     String &operator=(const String &rhs) {
         if (value == rhs.value)
             return *this;
-        if (--value->refCount == 0)
+        if (--value->refCount == 0) // 递减当前对象的引用计数(左侧对象)
             delete value;
 
         value = rhs.value;
-        ++value->refCount;
+        ++value->refCount; // 递增右侧对象引用计数
         return *this;
     }
 
@@ -200,11 +200,11 @@ template <class T>
 class RCPtr { // 智能指针实现
 public:
     RCPtr(T *realPtr = nullptr) : pointee(realPtr) {
-        init();
+        inc_cnt();
     }
     RCPtr(const RCPtr &rhs) : pointee(rhs.pointee) {
         // 当 String 发生拷贝初始化, 调用智能指针的拷贝构造函数
-        init();
+        inc_cnt();
     }
     ~RCPtr() {
         if (pointee) {
@@ -218,7 +218,7 @@ public:
             if (pointee)
                 pointee->removeReference();
             pointee = rhs.pointee;
-            init();
+            inc_cnt();
         }
         return *this;
     }
@@ -232,7 +232,7 @@ public:
 
 private:
     T *pointee;
-    void init() {
+    void inc_cnt() {
         if (pointee == nullptr)
             return;
         if (pointee->isShareable() == false) // 不可共享, 创建一份新的
