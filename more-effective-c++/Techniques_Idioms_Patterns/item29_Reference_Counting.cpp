@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 
@@ -155,6 +156,7 @@ void t3() {
     // s1[1]=f, s2[1]=e
 }
 
+namespace Better_RC_String { // 类的实现者层面, 直接拿来用即可
 // 抽象出来的 引用计数基类, 用于之后封装
 class RCObject {
 public:
@@ -193,7 +195,6 @@ RCObject::~RCObject() {
     printf("~RCObject()\n");
 }
 
-namespace Better_RC_String { // 类的实现者层面, 直接拿来用即可
 // 新的嵌套类实现引用计数字符串类型
 // 自动完成引用计数, T必须继承自RCObject, 以使用引用计数的功能
 template <class T>
@@ -315,28 +316,73 @@ void t4() {
     // ~RCPtr()
 }
 
-namespace Best_RC_String {
+namespace Best_RC {
+class RCObject {
+public:
+    RCObject() : refCount(0), shareable(true) {
+    } // 注意这里初始化成 0 了
+    RCObject(const RCObject &) : refCount(0), shareable(true) {
+    }
+    RCObject &operator=(const RCObject &) {
+        return *this;
+    }
+    virtual ~RCObject() = 0;
+
+    void addReference() {
+        ++refCount;
+        printf("inc, now cnt=%d\n", refCount);
+    }
+    void removeReference() {
+        --refCount;
+        printf("dec, now cnt=%d\n", refCount);
+        if (refCount == 0) {
+            delete this;
+        }
+    }
+    void markUnshareable() {
+        shareable = false;
+    }
+    bool isShareable() const {
+        return shareable;
+    }
+    bool isShared() const {
+        return refCount > 1;
+    }
+
+    // private:
+    int refCount;
+    bool shareable;
+};
+
+RCObject::~RCObject() {
+    printf("~RCObject()\n");
+}
+
 // 为库函数内的类实现引用计数(不可改动的类)Indirect
 template <class T>
 class RCIPtr {
 public:
     RCIPtr(T *realPtr = nullptr) : counter(new CountHolder) {
+        printf("%s\n", __FUNCTION__);
         counter->pointee = realPtr;
-        init();
+        inc_cnt();
     }
 
     RCIPtr(const RCIPtr &rhs) : counter(rhs.counter) {
-        init();
+        printf("%s\n", __FUNCTION__);
+        inc_cnt();
     }
 
     ~RCIPtr() {
+        printf("%s\n", __FUNCTION__);
         counter->removeReference();
     }
     RCIPtr &operator=(const RCIPtr &rhs) {
+        printf("%s\n", __FUNCTION__);
         if (counter != rhs.counter) {
             counter->removeReference();
             counter = rhs.counter;
-            init();
+            inc_cnt();
         }
         return *this;
     }
@@ -356,17 +402,22 @@ public:
         makeCopy(); // COW
         return *(counter->pointee);
     }
+    int get_cnt() const {
+        return counter->refCount;
+    }
 
 private:
     struct CountHolder : public RCObject {
         ~CountHolder() {
+            printf("%s\n", __FUNCTION__);
             delete pointee;
         }
         T *pointee;
     };
-    CountHolder *counter;
-    void init() {
-        if (counter->isShareable() == false) {
+    CountHolder *counter; // 指向引用计数基类
+    void inc_cnt() {
+        if (counter->isShareable() == false) { // 需要写时复制
+            printf("%s\n", __FUNCTION__);
             T *oldValue = counter->pointee;
             counter = new CountHolder;
             counter->pointee = new T(*oldValue);
@@ -374,7 +425,8 @@ private:
         counter->addReference();
     }
     void makeCopy() {
-        if (counter->isShared()) {
+        if (counter->isShared()) { // 正在被共享
+            printf("%s\n", __FUNCTION__);
             T *oldValue = counter->pointee;
             counter->removeReference();
             counter = new CountHolder;
@@ -394,9 +446,14 @@ public:
     }
     ~Widget() {
     }
-    Widget &operator=(const Widget &);
-    void doThis();
-    int showThat() const;
+    // Widget &operator=(const Widget &);
+    void doThis() {
+        printf("%s\n", __FUNCTION__);
+    }
+    int showThat() const {
+        printf("%s\n", __FUNCTION__);
+        return 0;
+    }
 };
 
 // 中间层
@@ -416,15 +473,36 @@ private:
     RCIPtr<Widget> value; // 实际控制
 };
 
-} // namespace Best_RC_String
+} // namespace Best_RC
+
+class P {
+public:
+    P() {
+        printf("%s\n", __FUNCTION__);
+    }
+    void f() { //
+        printf("%s\n", __FUNCTION__);
+    }
+    ~P() {
+        printf("%s\n", __FUNCTION__);
+    }
+    int val;
+};
 // 使用: 改善效率的最佳时机
 //  1. 相对多数的对象共享相对少量的实值
 //  2. 对象实值的产生或销毁成本很高, 或者使用内存较大
 void t5() {
-    using namespace Best_RC_String;
-    RCWidget w1, w2;
-    w1 = w2;
-}
+    using namespace Best_RC;
+    // printf("sizeof RCIPtr=%ld\n", sizeof(RCIPtr<P>)); // 8
+    RCIPtr<P> p(new P); // p: 0->1
+    auto q(p);          // q: 0->1->2, p: 1->2
+
+    // printf("q.cnt=%d\n", q.get_cnt());
+    // assert(q.get_cnt() == p.get_cnt()); // 2
+
+    RCIPtr<P> r(new P); // r: 0->1
+    r = q;              // r: 1->0, q: 2->3
+} // 3->0, 这里用到了 RAII, 比较巧妙
 
 int main(int argc, char *argv[]) {
     // t1();
